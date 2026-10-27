@@ -31,3 +31,44 @@ jobs:
 
       - name: Validate Python syntax
         run: python -m py_compile lambda_function.py
+
+  deploy:
+    name: Deploy Lambda to AWS
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+
+      - name: Package Lambda function
+        run: zip function.zip lambda_function.py
+
+      - name: Deploy Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name serverless-ops-processor \
+            --zip-file fileb://function.zip
+
+      - name: Verify deployment
+        run: |
+          aws lambda get-function \
+            --function-name serverless-ops-processor \
+            --query 'Configuration.[FunctionName,LastModified,State]' \
+            --output table
